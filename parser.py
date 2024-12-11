@@ -55,17 +55,24 @@ class CarParser:
                 
                 print(f"Обработанные цены: {price_info}")
                 
-                # Получаем изображения
+                # Получаем изображения из div с id="4"
                 images = []
-                img_elements = page.query_selector_all('ul[data-log-view] img[src*="dcarimg.com"]')
+
+                # Ждем загрузки блока с изображениями
+                page.wait_for_selector('div[id="4"] ul', timeout=30000)
+
+                # Получаем все изображения из списка
+                img_elements = page.query_selector_all('div[id="4"] ul li div img')
+
                 for img in img_elements:
                     src = img.get_attribute('src')
-                    if src:
-                        if not src.startswith('http'):
-                            src = 'https:' + src
-                        images.append(src)
-                
-                print(f"Найдено изображений: {len(images)}")
+                    if src and 'svg' not in src:  # Исключаем SVG изображения
+                        clean_url = src.split('?')[0]
+                        if clean_url not in images:
+                            images.append(clean_url)
+                            print(f"Добавлено изображение {len(images)}: {clean_url}")
+
+                print(f"Успешно получено изображений: {len(images)}")
                 
                 car_id = urlparse(url).path.split('/')[-1]
                 car_dir = f"cars/{car_id}"
@@ -96,19 +103,35 @@ class CarParser:
 
     def download_images(self, image_urls, save_dir):
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Referer': 'https://www.dongchedi.com/'
-        }
-        
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Referer': 'https://www.dongchedi.com/',
+              'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+          }
+          
         for i, url in enumerate(image_urls):
             try:
                 print(f"Скачивание изображения {i+1}: {url}")
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=10)
+                
                 if response.status_code == 200:
-                    image_path = f"{save_dir}/image_{i+1}.webp"
+                    # Определяем формат изображения
+                    content_type = response.headers.get('content-type', '')
+                    if 'webp' in content_type:
+                        ext = 'webp'
+                    elif 'jpeg' in content_type or 'jpg' in content_type:
+                        ext = 'jpg'
+                    else:
+                        # Определяем по URL если заголовок не помог
+                        ext = url.split('.')[-1].lower() if '.' in url else 'webp'
+                    
+                    image_path = f"{save_dir}/image_{i+1}.{ext}"
                     with open(image_path, 'wb') as f:
                         f.write(response.content)
                     print(f"Изображение сохранено: {image_path}")
-                time.sleep(0.5)
+                else:
+                    print(f"Ошибка при скачивании: статус {response.status_code}")
+                    
+                time.sleep(1)  # Увеличиваем задержку между скачиваниями
+                
             except Exception as e:
                 print(f"Ошибка при скачивании изображения {url}: {str(e)}")
